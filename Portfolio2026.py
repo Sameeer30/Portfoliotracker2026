@@ -2,173 +2,158 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+from datetime import datetime
 
-st.set_page_config(page_title="Ajmer Restaurant Portfolio Tracker", layout="wide", page_icon="📊")
-st.title("📊 Restaurant Portfolio MoM Dashboard – Ajmer")
-st.markdown("Upload your Res_level_txn CSV (supports Jan–Mar 2026 and newer)")
+st.set_page_config(page_title="Ajmer Portfolio • 2026", layout="wide", page_icon="📈", initial_sidebar_state="expanded")
 
-# ────────────────────────────────────────────────
-# File upload & basic cleaning
-# ────────────────────────────────────────────────
-uploaded = st.file_uploader("Choose CSV file", type=["csv"])
+# ── Custom CSS for premium look ─────────────────────────────────────
+st.markdown("""
+<style>
+    .big-metric {font-size: 2.8rem; font-weight: 700; margin: 0;}
+    .card {background: linear-gradient(135deg, #1e3a8a, #3b82f6); color: white; padding: 20px; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.2);}
+    .flag-green {color: #10b981; font-size: 1.4rem;}
+    .flag-red   {color: #ef4444; font-size: 1.4rem;}
+    .hero {background: linear-gradient(90deg, #1e40af, #3b82f6); padding: 30px; border-radius: 20px; color: white;}
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown('<div class="hero"><h1 style="margin:0; text-align:center;">📊 Ajmer Restaurant Portfolio • Live Tracker</h1><p style="text-align:center; opacity:0.9;">March 2026 • Smart Insights • Beautifully Designed</p></div>', unsafe_allow_html=True)
+
+# ── Upload ─────────────────────────────────────────────────────────
+uploaded = st.file_uploader("Upload latest Res_level_txn CSV", type=["csv"])
 
 if uploaded:
     df = pd.read_csv(uploaded)
     df.columns = df.columns.str.strip()
 
-    # Core metrics
-    df['Month']       = df['Aggregation']
-    df['Orders']      = df['delivered_ov'].fillna(0).astype(float)
-    df['CV']          = df['cv'].fillna(0).astype(float)
-    df['GMV']         = df['GMV'].fillna(0).astype(float)
-    df['Total_ov']    = df['Total_ov'].fillna(0).astype(float)
-    df['AOV']         = df.apply(lambda x: round(x['GMV']/x['Orders'],1) if x['Orders']>0 else 0, axis=1)
-    df['SL_pct']      = df.apply(lambda x: round(x['Orders']/x['Total_ov']*100,1) if x['Total_ov']>0 else 0, axis=1)
+    # Core + Ads calculations
+    df['Month'] = df['Aggregation']
+    df['Orders'] = df['delivered_ov'].fillna(0)
+    df['CV'] = df['cv'].fillna(0)
+    df['GMV'] = df['GMV'].fillna(0)
+    df['AOV'] = df.apply(lambda x: round(x['GMV']/x['Orders'],1) if x['Orders']>0 else 0, axis=1)
+    df['SL_pct'] = df.apply(lambda x: round(x['Orders']/x['Total_ov']*100,1) if x['Total_ov']>0 else 0, axis=1)
+    
+    df['Ads_Booked'] = df['booked_amount'].fillna(0)
+    df['Ads_Billed'] = df['billed_amount'].fillna(0)
+    df['Ads_CV_pct'] = df.apply(lambda x: round(x['ads_cv']/x['CV']*100,1) if x['CV']>0 else 0, axis=1)
 
-    # ── Ads related columns ───────────────────────────────
-    df['Ads_Booked']  = df['booked_amount'].fillna(0).astype(float)
-    df['Ads_Billed']  = df['billed_amount'].fillna(0).astype(float)
-    df['Ads_CV']      = df['ads_cv'].fillna(0).astype(float)
-    df['Ads_GMV']     = df['ads_gmv'].fillna(0).astype(float)
-    df['Ads_CV_pct']  = df.apply(lambda x: round(x['Ads_CV']/x['CV']*100,1) if x['CV']>0 else 0, axis=1)
+    latest = df['Month'].max()
+    prev = sorted(df['Month'].unique())[-2] if len(df['Month'].unique()) >= 2 else None
 
-    # Sort months chronologically
-    df = df.sort_values(['res_name', 'Month'])
+    # ── Sidebar Filters ─────────────────────────────────────────────
+    st.sidebar.header("🎛️ Filters")
+    cuisine_filter = st.sidebar.multiselect("Cuisine", options=df['res_cuisine_new'].dropna().unique(), default=None)
+    month_filter = st.sidebar.selectbox("View Month", options=sorted(df['Month'].unique()), index=len(df['Month'].unique())-1)
 
-    # ────────────────────────────────────────────────
-    # Portfolio KPIs
-    # ────────────────────────────────────────────────
-    latest_month = df['Month'].max()
-    prev_month   = sorted(df['Month'].unique())[-2] if len(df['Month'].unique()) >= 2 else None
+    filtered = df[df['Month'] == month_filter]
+    if cuisine_filter:
+        filtered = filtered[filtered['res_cuisine_new'].isin(cuisine_filter)]
 
-    portfolio = df[df['Month'] == latest_month].agg({
-        'Orders': 'sum',
-        'GMV': 'sum',
-        'CV': 'sum',
-        'AOV': 'mean',
-        'SL_pct': 'mean',
-        'Ads_Booked': 'sum',
-        'Ads_Billed': 'sum',
-        'Ads_CV_pct': 'mean'
-    }).round(2)
+    # ── KPI Cards (Beautiful gradient) ─────────────────────────────
+    col1, col2, col3, col4, col5 = st.columns(5)
 
-    if prev_month:
-        prev_port = df[df['Month'] == prev_month].agg({
-            'Orders': 'sum', 'GMV': 'sum'
-        }).round(2)
-        orders_mom = (portfolio['Orders'] - prev_port['Orders']) / prev_port['Orders'] * 100 if prev_port['Orders'] > 0 else 0
-        gmv_mom    = (portfolio['GMV']    - prev_port['GMV'])    / prev_port['GMV']    * 100 if prev_port['GMV']    > 0 else 0
-    else:
-        orders_mom = gmv_mom = None
+    with col1:
+        st.markdown('<div class="card"><h3>Active Restaurants</h3><span class="big-metric">' + str(len(filtered['res_name'].unique())) + '</span></div>', unsafe_allow_html=True)
+    
+    with col2:
+        gmv_val = filtered['GMV'].sum() / 1_00_000
+        st.metric("Total GMV", f"₹{gmv_val:,.1f}L", delta=None)
 
-    cols = st.columns(5)
-    cols[0].metric("Active Restaurants", len(df[df['Month']==latest_month]['res_name'].unique()))
-    cols[1].metric("Orders (latest)", f"{int(portfolio['Orders']):,}", f"{orders_mom:+.1f}%" if orders_mom is not None else "—")
-    cols[2].metric("GMV (latest)",    f"₹{portfolio['GMV']/1e5:,.1f} L", f"{gmv_mom:+.1f}%" if gmv_mom is not None else "—")
-    cols[3].metric("Avg AOV",         f"₹{portfolio['AOV']:,.0f}")
-    cols[4].metric("Avg Ads/CV %",    f"{portfolio['Ads_CV_pct']:.1f}%")
+    with col3:
+        orders_val = int(filtered['Orders'].sum())
+        st.metric("Total Orders", f"{orders_val:,}")
 
-    # ────────────────────────────────────────────────
-    # Charts – Row 1
-    # ────────────────────────────────────────────────
-    st.subheader(f"Visual Overview – {latest_month}")
+    with col4:
+        aov_val = round(filtered['AOV'].mean(), 1)
+        st.metric("Avg AOV", f"₹{aov_val}")
+
+    with col5:
+        ads_eff = round(filtered['Ads_CV_pct'].mean(), 1)
+        st.metric("Ad Contribution", f"{ads_eff}%")
+
+    # ── Growth Radar + Flags ───────────────────────────────────────
+    st.subheader("🚀 Growth Radar & Smart Flags")
+
+    if prev:
+        prev_df = df[df['Month'] == prev]
+        mom = filtered.groupby('res_name').agg({'GMV':'sum','Orders':'sum'}).reset_index()
+        mom_prev = prev_df.groupby('res_name').agg({'GMV':'sum','Orders':'sum'}).reset_index()
+        mom = mom.merge(mom_prev, on='res_name', suffixes=('_now','_prev'), how='left').fillna(0)
+        mom['GMV_Change_%'] = mom.apply(lambda x: round((x['GMV_now']-x['GMV_prev'])/x['GMV_prev']*100,1) if x['GMV_prev']>0 else 0, axis=1)
+
+        # Top risers & fallers
+        risers = mom.nlargest(5, 'GMV_Change_%')
+        fallers = mom.nsmallest(5, 'GMV_Change_%')
+
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("**🟢 Top Risers**")
+            for _, r in risers.iterrows():
+                st.success(f"**{r['res_name']}** ↑ {r['GMV_Change_%']}%")
+        with c2:
+            st.markdown("**🔴 Top Fallers / Risk**")
+            for _, r in fallers.iterrows():
+                if r['GMV_Change_%'] <= -25:
+                    st.error(f"**{r['res_name']}** ↓ {r['GMV_Change_%']}%")
+                else:
+                    st.warning(f"{r['res_name']} ↓ {r['GMV_Change_%']}%")
+
+    # ── Beautiful Charts ───────────────────────────────────────────
+    st.subheader("Visual Insights")
 
     c1, c2 = st.columns(2)
-
     with c1:
-        top10 = df[df['Month']==latest_month].nlargest(10, 'GMV')[['res_name','GMV','Orders','AOV']]
-        fig_bar = px.bar(top10, x='GMV', y='res_name', orientation='h',
-                         text_auto=True, title="Top 10 by GMV",
-                         color='GMV', color_continuous_scale='bluered')
-        st.plotly_chart(fig_bar, use_container_width=True)
+        top10 = filtered.nlargest(10, 'GMV')
+        fig = px.bar(top10, x='GMV', y='res_name', orientation='h', text='GMV',
+                     title="Top 10 Restaurants by GMV", color='GMV',
+                     color_continuous_scale='emerald')
+        fig.update_traces(texttemplate='₹%{x:,.0f}', textposition='outside')
+        st.plotly_chart(fig, use_container_width=True)
 
     with c2:
-        trend = df.groupby('Month')[['Orders','GMV']].sum().reset_index()
-        fig_line = go.Figure()
-        fig_line.add_trace(go.Scatter(x=trend['Month'], y=trend['Orders'], name="Orders", yaxis="y"))
-        fig_line.add_trace(go.Scatter(x=trend['Month'], y=trend['GMV']/1e5,   name="GMV (Lakh)", yaxis="y2"))
-        fig_line.update_layout(
-            title="Portfolio Trend",
-            yaxis=dict(title="Orders"),
-            yaxis2=dict(title="GMV (₹ Lakh)", overlaying="y", side="right")
-        )
-        st.plotly_chart(fig_line, use_container_width=True)
+        cuisine_pie = filtered.groupby('res_cuisine_new')['GMV'].sum().reset_index()
+        fig_pie = px.pie(cuisine_pie, names='res_cuisine_new', values='GMV', title="Cuisine Contribution",
+                         color_discrete_sequence=px.colors.sequential.Blues)
+        st.plotly_chart(fig_pie, use_container_width=True)
 
-    # ────────────────────────────────────────────────
-    # Restaurant selector + detailed view
-    # ────────────────────────────────────────────────
-    st.subheader("Restaurant Deep Dive")
+    # ── Restaurant Deep Dive (Premium Card Style) ───────────────────
+    st.subheader("🔍 Restaurant Deep Dive")
+    selected = st.selectbox("Choose a restaurant", options=sorted(df['res_name'].unique()))
 
-    res_list = sorted(df['res_name'].unique())
-    selected_res = st.selectbox("Select Restaurant", res_list, index=0)
+    if selected:
+        res_data = df[df['res_name'] == selected].sort_values('Month')
+        last = res_data.iloc[-1]
+        prev = res_data.iloc[-2] if len(res_data) > 1 else None
 
-    if selected_res:
-        res_df = df[df['res_name'] == selected_res].sort_values('Month')
+        change = (last['GMV'] - prev['GMV']) / prev['GMV'] * 100 if prev is not None and prev['GMV'] > 0 else 0
 
-        # Flags logic
-        if len(res_df) >= 2:
-            last = res_df.iloc[-1]
-            prev = res_df.iloc[-2]
-            gmv_change = (last['GMV'] - prev['GMV']) / prev['GMV'] * 100 if prev['GMV'] > 0 else 0
-            ord_change = (last['Orders'] - prev['Orders']) / prev['Orders'] * 100 if prev['Orders'] > 0 else 0
+        flag = "🟢 STRONG GROWTH" if change > 25 else "🔴 ATTENTION NEEDED" if change < -25 else "🟡 STABLE"
+        flag_color = "#10b981" if change > 25 else "#ef4444" if change < -25 else "#eab308"
 
-            if last['Orders'] == 0 and prev['Orders'] > 20:
-                flag = "🔴 CRITICAL – Dropped to zero orders"
-                flag_color = "red"
-            elif gmv_change <= -30 or ord_change <= -30:
-                flag = f"🔴 Strong drop ({gmv_change:+.1f}% GMV / {ord_change:+.1f}% Orders)"
-                flag_color = "red"
-            elif gmv_change >= 30 or ord_change >= 30:
-                flag = f"🟢 Strong growth ({gmv_change:+.1f}% GMV / {ord_change:+.1f}% Orders)"
-                flag_color = "green"
-            else:
-                flag = "→ Stable / minor change"
-                flag_color = "gray"
-        else:
-            flag = "→ New or single-month restaurant"
-            flag_color = "blue"
+        st.markdown(f"""
+        <div style="background:linear-gradient(135deg,#1e3a8a,#3b82f6);padding:25px;border-radius:20px;color:white;">
+            <h2>{selected}</h2>
+            <h3 style="color:{flag_color}; font-size:2rem;">{flag}</h3>
+            <p><strong>Latest GMV:</strong> ₹{last['GMV']:,.0f} | 
+               <strong>Orders:</strong> {int(last['Orders'])} | 
+               <strong>AOV:</strong> ₹{last['AOV']:.0f}</p>
+        </div>
+        """, unsafe_allow_html=True)
 
-        st.markdown(f"**Status Flag:** <span style='color:{flag_color}; font-weight:bold; font-size:1.2em;'>{flag}</span>", unsafe_allow_html=True)
-
-        # Detailed table
-        cols_show = ['Month','Orders','CV','GMV','AOV','SL_pct','Ads_Booked','Ads_Billed','Ads_CV_pct','Ads_GMV']
-        st.dataframe(res_df[cols_show].style.format({
-            'GMV':'₹{:,.0f}',
-            'CV':'₹{:,.0f}',
-            'Ads_Booked':'₹{:,.0f}',
-            'Ads_Billed':'₹{:,.0f}',
-            'Ads_GMV':'₹{:,.0f}',
-            'AOV':'₹{:.1f}',
-            'SL_pct':'{:.1f}%',
-            'Ads_CV_pct':'{:.1f}%'
-        }), use_container_width=True)
-
-        # Mini chart for selected restaurant
-        fig_res = px.line(res_df, x='Month', y=['Orders','GMV'], 
-                          title=f"{selected_res} – Orders & GMV Trend",
-                          markers=True)
+        # Trend chart
+        fig_res = px.line(res_data, x='Month', y=['GMV','Orders'], markers=True,
+                          title=f"{selected} Performance Trend",
+                          color_discrete_sequence=['#3b82f6', '#10b981'])
         st.plotly_chart(fig_res, use_container_width=True)
 
-    # ────────────────────────────────────────────────
-    # Download full cleaned + pivoted data
-    # ────────────────────────────────────────────────
-    pivot = df.pivot_table(
-        index=['res_name','res_cuisine_new'],
-        columns='Month',
-        values=['Orders','GMV','AOV','SL_pct','Ads_Booked','Ads_CV_pct'],
-        aggfunc='first'
-    ).round(2)
-
-    csv = pivot.to_csv().encode('utf-8')
-    st.download_button(
-        label="📥 Download Full MoM Report (csv)",
-        data=csv,
-        file_name=f"portfolio_mom_{latest_month}.csv",
-        mime="text/csv"
-    )
+    # ── Download ───────────────────────────────────────────────────
+    st.download_button("📥 Download Complete Report", 
+                       data=df.to_csv(index=False).encode(),
+                       file_name=f"Ajmer_Portfolio_Full_Report_{latest}.csv",
+                       mime="text/csv")
 
 else:
-    st.info("Upload your CSV file above to see the dashboard")
+    st.info("👆 Upload your CSV to unlock the beautiful dashboard")
 
-st.markdown("---")
-st.caption("Features: Ads metrics • MoM flags (red/green) • Portfolio & restaurant charts • Downloadable report")
+st.caption("Built with ❤️ for Raja • Modern cards • Smart flags • Premium visuals")
