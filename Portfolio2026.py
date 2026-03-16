@@ -82,17 +82,15 @@ if uploaded:
     if selected_res != "All":
         filtered = filtered[filtered['res_name'] == selected_res]
 
-    # Determine what is considered "latest" for flagging zero orders
-    # If month is filtered → use that month
-    # If "All" → use the global latest month in data
+    # Reference month for zero-order flagging
     reference_month = selected_month if selected_month != "All" else df['Month'].max()
 
     # ── Portfolio Summary Cards ─────────────────────────────────────────
     col1, col2, col3, col4, col5 = st.columns(5)
 
     col1.markdown('<div class="card"><div class="metric-label">Active Restaurants</div><div class="metric-value">' + str(len(filtered['res_name'].unique())) + '</div></div>', unsafe_allow_html=True)
-    col2.metric("Total GMV", f"₹{filtered['GMV'].sum()/1e5:,.1f} L")
-    col3.metric("Total Orders", f"{int(filtered['Orders'].sum()):,}")
+    col2.metric("Total GMV", f"₹{filtered['GMV'].sum()/1e5:,.1f} L" if not filtered.empty else "₹0")
+    col3.metric("Total Orders", f"{int(filtered['Orders'].sum()):,}" if not filtered.empty else "0")
     col4.metric("Avg AOV", f"₹{filtered['AOV'].mean():.0f}" if not filtered.empty else "₹0")
     col5.metric("Avg Ad Contribution", f"{filtered['Ads_CV_pct'].mean():.1f}%" if not filtered.empty else "0.0%")
 
@@ -103,7 +101,6 @@ if uploaded:
     for _, row in filtered.iterrows():
         issues = []
 
-        # Zero orders flag — only if this row is from the reference (latest/filtered) month
         if row['Orders'] == 0 and row['Month'] == reference_month:
             issues.append("Zero orders in current view month")
 
@@ -135,7 +132,9 @@ if uploaded:
                 'GMV': '₹{:,.0f}',
                 'SL%': '{:.1f}%',
                 'Ads%': '{:.1f}%'
-            }).background_gradient(subset=['GMV'], cmap='OrRd_r'),
+            })
+            .highlight_max(subset=['GMV'], color='#7f1d1d')     # dark red for high GMV in attention list
+            .highlight_min(subset=['SL%'], color='#7f1d1d'),    # dark red for low SL
             use_container_width=True
         )
 
