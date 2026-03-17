@@ -17,7 +17,7 @@ st.set_page_config(
 # Title & header
 # ───────────────────────────────────────────────
 st.title("🍽️ Restaurant Performance Dashboard — JF25 vs JF26")
-st.markdown("**Comparison of orders, growth, portfolio & city-wise contribution** — Jaipur area restaurants")
+st.markdown("**Comparison of orders, growth, portfolio & city-wise contribution**")
 
 # ───────────────────────────────────────────────
 # Hard-coded data (your table pasted & lightly cleaned)
